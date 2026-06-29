@@ -195,17 +195,21 @@
   .pill-tag button:hover{opacity:1;}
 
   /* ===== Table KPI (above table) - smaller, right-aligned number, lighter tone ===== */
+  .table-kpi-row{display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:14px;}
+  @media (max-width:560px){ .table-kpi-row{grid-template-columns:1fr;} }
   .table-kpi-card{
     background:#F3EEFA; border:1.5px solid var(--line);
     border-radius:11px; padding:10px 18px; color:var(--ink);
-    margin-bottom:14px; display:flex; align-items:center; justify-content:space-between;
-    gap:12px;
+    display:flex; align-items:center; justify-content:space-between;
+    gap:12px; margin-bottom:0;
   }
+  .table-kpi-card.warn{background:var(--warn-bg); border-color:#FCD34D;}
   .table-kpi-label{font-size:14.9px; color:var(--ink-soft); font-weight:600;}
   .table-kpi-num{
     font-family:'Space Mono',monospace; font-size:23px; font-weight:700;
     line-height:1; color:var(--violet-deep); text-align:right;
   }
+  .table-kpi-card.warn .table-kpi-num{color:#B45309;}
 
   /* ===== Table card ===== */
   .table-card{
@@ -405,9 +409,15 @@
       <div class="active-pills" id="active-pills"></div>
     </div>
 
-    <div class="table-kpi-card">
-      <div class="table-kpi-label">ผู้สมัครตามตัวกรองนี้</div>
-      <div class="table-kpi-num mono" id="table-kpi-total">—</div>
+    <div class="table-kpi-row">
+      <div class="table-kpi-card">
+        <div class="table-kpi-label">ผู้สมัครตามตัวกรองนี้</div>
+        <div class="table-kpi-num mono" id="table-kpi-total">—</div>
+      </div>
+      <div class="table-kpi-card warn">
+        <div class="table-kpi-label">ข้อมูลไม่ครบ (ตามตัวกรองนี้)</div>
+        <div class="table-kpi-num mono" id="table-kpi-incomplete">—</div>
+      </div>
     </div>
 
     <div class="table-card">
@@ -792,11 +802,21 @@ const REGION_SHORT = {
 // RENDER: TABLE
 // ============================================================
 function renderTable() {
+  const filteredRawRows = getCurrentFilteredRawRows();
   const instRows = getCurrentInstitutionRows();
 
   const totalApplicants = instRows.reduce((sum, r) => sum + r.count, 0);
   document.getElementById('table-count').textContent = instRows.length.toLocaleString('th-TH') + ' แห่ง';
   document.getElementById('table-kpi-total').textContent = totalApplicants.toLocaleString('th-TH');
+
+  // นับ "ข้อมูลไม่ครบ" แบบเดียวกับ KPI card บนสุด: นับคนที่ขาดอย่างน้อย 1 อย่าง (ไม่ซ้อนนับ)
+  // คำนวณจาก raw rows ที่ผ่านตัวกรองระดับแถว (region/host/major) เท่านั้น
+  // ส่วนตัวกรองระดับสถาบัน (province/institution/search/completeness) ใช้รายชื่อสถาบันที่เหลือจาก instRows มากรองซ้ำ
+  const remainingInstitutionNames = new Set(instRows.map(r => r.institution));
+  const incompleteInFilter = filteredRawRows.filter(r =>
+    remainingInstitutionNames.has(r.institutionThai) && (r.noEmail || r.noSid)
+  ).length;
+  document.getElementById('table-kpi-incomplete').textContent = incompleteInFilter.toLocaleString('th-TH');
 
   const tbody = document.getElementById('data-table-body');
   if (instRows.length === 0) {
