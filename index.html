@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+Thai:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   :root{
     --violet: #8B5FBF;
@@ -316,6 +317,16 @@
     font-family:'Space Mono',monospace;
   }
 
+  .page-btn{
+    font-family:'Space Mono',monospace; font-size:14.5px; font-weight:700;
+    padding:7px 13px; border-radius:8px; border:1.5px solid var(--line);
+    background:#fff; color:var(--violet-deep); cursor:pointer; transition:all .15s;
+  }
+  .page-btn:hover:not(:disabled){border-color:var(--violet); background:#F3EEFA;}
+  .page-btn:disabled{opacity:.4; cursor:not-allowed;}
+  .page-btn.active{background:linear-gradient(135deg, var(--violet), var(--indigo)); color:#fff; border-color:transparent;}
+  .page-info{font-size:14.5px; color:var(--ink-soft);}
+
   ::selection{background:var(--violet); color:#fff;}
 </style>
 </head>
@@ -477,7 +488,6 @@
     <div id="tab-search" class="tab-panel" style="display:none;">
       <div class="search-intro-card">
         <p class="search-intro-title">ค้นหารายชื่อนักศึกษาที่สมัครเข้ารับการทดสอบ</p>
-        <p class="search-intro-sub">สำหรับครู/ผู้ดูแลสถานศึกษา ใช้ตรวจสอบรายชื่อนักศึกษาของสถานศึกษาตนเองที่ส่งสมัคร — แสดงเฉพาะชื่อ-นามสกุล สาขาวิชา วันที่เข้ารับการทดสอบ และสถานศึกษาเจ้าภาพ (ไม่แสดงอีเมลหรือรหัสนักศึกษา)</p>
       </div>
 
       <div class="filter-card">
@@ -504,7 +514,10 @@
       <div class="table-card">
         <div class="table-card-head">
           <h2>รายชื่อนักศึกษา</h2>
-          <span class="table-count" id="student-table-count">เริ่มค้นหาหรือเลือกสถานศึกษาด้านบน</span>
+          <div style="display:flex; align-items:center; gap:10px;">
+            <span class="table-count" id="student-table-count">เริ่มค้นหาหรือเลือกสถานศึกษาด้านบน</span>
+            <button class="btn" id="btn-export-students-excel">📥 ดาวน์โหลด Excel</button>
+          </div>
         </div>
         <div class="table-scroll">
           <table class="data-table" id="student-table">
@@ -521,6 +534,7 @@
             <tbody id="student-table-body"></tbody>
           </table>
         </div>
+        <div id="student-pagination" style="display:flex; align-items:center; justify-content:space-between; padding:14px 20px; flex-wrap:wrap; gap:10px; border-top:1px solid var(--line);"></div>
       </div>
     </div><!-- /tab-search -->
 
@@ -1038,6 +1052,8 @@ function switchTab(tabName) {
 // STUDENT SEARCH (ค้นหารายชื่อนักศึกษารายบุคคล)
 // ============================================================
 let studentFilters = { institution: '', major: '', search: '' };
+let studentPage = 1;
+const STUDENT_PAGE_SIZE = 500;
 let studentSortState = { key: 'name', dir: 'asc' };
 
 function populateStudentFilterOptions() {
@@ -1069,10 +1085,12 @@ function renderStudentTable() {
 
   const countEl = document.getElementById('student-table-count');
   const tbody = document.getElementById('student-table-body');
+  const pagerEl = document.getElementById('student-pagination');
 
   if (!hasAnyFilter) {
     countEl.textContent = 'เริ่มค้นหาหรือเลือกสถานศึกษาด้านบน';
     tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:40px; color:var(--ink-soft);">พิมพ์ชื่อ-นามสกุล หรือเลือกสถานศึกษา/สาขาวิชา เพื่อแสดงรายชื่อนักศึกษา</td></tr>';
+    pagerEl.innerHTML = '';
     return;
   }
 
@@ -1093,18 +1111,22 @@ function renderStudentTable() {
 
   if (rows.length === 0) {
     tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:40px; color:var(--ink-soft);">ไม่พบรายชื่อที่ตรงกับเงื่อนไข</td></tr>';
+    pagerEl.innerHTML = '';
     return;
   }
 
-  // จำกัดแสดงผลไม่เกิน 500 แถวแรกเพื่อความเร็วของเบราว์เซอร์ (กรณีค้นกว้างเกินไป)
-  const LIMIT = 500;
-  const shown = rows.slice(0, LIMIT);
+  const totalPages = Math.max(1, Math.ceil(rows.length / STUDENT_PAGE_SIZE));
+  if (studentPage > totalPages) studentPage = totalPages;
+  if (studentPage < 1) studentPage = 1;
+
+  const startIdx = (studentPage - 1) * STUDENT_PAGE_SIZE;
+  const shown = rows.slice(startIdx, startIdx + STUDENT_PAGE_SIZE);
 
   tbody.innerHTML = shown.map((r, i) => {
     const examDate = HOST_EXAM_DATES[r.host] || '—';
     return `
     <tr>
-      <td class="row-idx">${i + 1}</td>
+      <td class="row-idx">${startIdx + i + 1}</td>
       <td><span class="inst-name-th" style="font-size:14px;">${escapeHtml(r.firstName)} ${escapeHtml(r.lastName)}</span></td>
       <td>${escapeHtml(r.institutionThai)}</td>
       <td><span class="pill pill-major">${escapeHtml(r.major)}</span></td>
@@ -1114,28 +1136,107 @@ function renderStudentTable() {
   `;
   }).join('');
 
-  if (rows.length > LIMIT) {
-    tbody.innerHTML += `<tr><td colspan="6" style="text-align:center; padding:14px; color:var(--ink-soft); font-size:13px;">แสดง ${LIMIT.toLocaleString('th-TH')} จาก ${rows.length.toLocaleString('th-TH')} รายชื่อ — กรุณาระบุตัวกรองให้แคบลงเพื่อดูรายชื่อที่เหลือ</td></tr>`;
+  renderStudentPagination(totalPages, rows.length, startIdx, shown.length);
+}
+
+function renderStudentPagination(totalPages, totalRows, startIdx, shownCount) {
+  const pagerEl = document.getElementById('student-pagination');
+
+  if (totalPages <= 1) {
+    pagerEl.innerHTML = '';
+    return;
   }
+
+  const rangeStart = startIdx + 1;
+  const rangeEnd = startIdx + shownCount;
+
+  let pageButtons = '';
+  const maxButtons = 7;
+  let firstPage = Math.max(1, studentPage - Math.floor(maxButtons / 2));
+  let lastPage = Math.min(totalPages, firstPage + maxButtons - 1);
+  firstPage = Math.max(1, lastPage - maxButtons + 1);
+
+  for (let p = firstPage; p <= lastPage; p++) {
+    pageButtons += `<button class="page-btn ${p === studentPage ? 'active' : ''}" data-page="${p}">${p}</button>`;
+  }
+
+  pagerEl.innerHTML = `
+    <span class="page-info">แสดง ${rangeStart.toLocaleString('th-TH')}–${rangeEnd.toLocaleString('th-TH')} จาก ${totalRows.toLocaleString('th-TH')} รายชื่อ</span>
+    <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+      <button class="page-btn" id="student-page-prev" ${studentPage === 1 ? 'disabled' : ''}>‹ ก่อนหน้า</button>
+      ${pageButtons}
+      <button class="page-btn" id="student-page-next" ${studentPage === totalPages ? 'disabled' : ''}>ถัดไป ›</button>
+    </div>
+  `;
+
+  const prevBtn = document.getElementById('student-page-prev');
+  const nextBtn = document.getElementById('student-page-next');
+  if (prevBtn) prevBtn.addEventListener('click', () => { studentPage--; renderStudentTable(); });
+  if (nextBtn) nextBtn.addEventListener('click', () => { studentPage++; renderStudentTable(); });
+  pagerEl.querySelectorAll('.page-btn[data-page]').forEach(btn => {
+    btn.addEventListener('click', () => { studentPage = parseInt(btn.dataset.page, 10); renderStudentTable(); });
+  });
 }
 
 function initStudentSearchTab() {
   populateStudentFilterOptions();
 
+  document.getElementById('btn-export-students-excel').addEventListener('click', () => {
+    let rows = RAW_ROWS;
+    if (studentFilters.institution) rows = rows.filter(r => r.institutionThai === studentFilters.institution);
+    if (studentFilters.major) rows = rows.filter(r => r.major === studentFilters.major);
+    if (studentFilters.search.trim().length >= 2) {
+      const q = studentFilters.search.trim().toLowerCase();
+      rows = rows.filter(r =>
+        (r.firstName + ' ' + r.lastName).toLowerCase().includes(q) ||
+        r.institutionThai.toLowerCase().includes(q)
+      );
+    }
+    if (rows.length === 0) {
+      alert('ไม่พบข้อมูลตามตัวกรองที่เลือก');
+      return;
+    }
+    rows = [...rows].sort((a, b) => {
+      const majorCmp = a.major.localeCompare(b.major, 'th');
+      if (majorCmp !== 0) return majorCmp;
+      const instCmp = a.institutionThai.localeCompare(b.institutionThai, 'th');
+      if (instCmp !== 0) return instCmp;
+      return (a.firstName + a.lastName).localeCompare(b.firstName + b.lastName, 'th');
+    });
+    const data = rows.map((r, i) => ({
+      'ลำดับ': i + 1,
+      'สาขาวิชา': r.major,
+      'ชื่อ-นามสกุล': (r.firstName + ' ' + r.lastName).trim(),
+      'สถานศึกษา': r.institutionThai,
+      'วันที่เข้ารับการทดสอบ': HOST_EXAM_DATES[r.host] || '—',
+      'สถานศึกษาเจ้าภาพ': r.host
+    }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    ws['!cols'] = [{wch:6},{wch:30},{wch:28},{wch:40},{wch:20},{wch:16}];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'รายชื่อนักศึกษา');
+    const dateStr = new Date().toISOString().slice(0,10);
+    XLSX.writeFile(wb, `รายชื่อนักศึกษา_เรียงตามสาขา_${dateStr}.xlsx`);
+  });
+
   document.getElementById('f2-institution').addEventListener('change', (e) => {
     studentFilters.institution = e.target.value;
+    studentPage = 1;
     renderStudentTable();
   });
   document.getElementById('f2-major').addEventListener('change', (e) => {
     studentFilters.major = e.target.value;
+    studentPage = 1;
     renderStudentTable();
   });
   document.getElementById('f2-search').addEventListener('input', (e) => {
     studentFilters.search = e.target.value;
+    studentPage = 1;
     renderStudentTable();
   });
   document.getElementById('btn2-reset').addEventListener('click', () => {
     studentFilters = { institution: '', major: '', search: '' };
+    studentPage = 1;
     document.getElementById('f2-institution').value = '';
     document.getElementById('f2-major').value = '';
     document.getElementById('f2-search').value = '';
